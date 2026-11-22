@@ -1,55 +1,71 @@
+"""
+AULA S75 Pro Device Manager
+Provides high-level abstraction for interacting with AULA S75 Pro keyboard.
+"""
+
 import hid
+from .protocol import (
+    VENDOR_ID,
+    PRODUCT_ID,
+    LIGHT_MODES,
+    open_keyboard_device,
+    apply_keyboard_lighting,
+)
 
-VENDOR_ID = 0x0C45
-PRODUCT_ID = 0x800A
+class AulaS75Device:
+    def __init__(self):
+        self.vid = VENDOR_ID
+        self.pid = PRODUCT_ID
 
-def list_aula_devices():
-    """Scan and list all HID endpoints matching AULA S75 Pro."""
-    devices = hid.enumerate(VENDOR_ID, PRODUCT_ID)
-    if not devices:
-        print("[-] Không tìm thấy AULA S75 Pro. Hãy đảm bảo bàn phím đang cắm dây cáp USB.")
-        return []
+    def is_connected(self) -> bool:
+        """Check if keyboard is connected via USB."""
+        devs = hid.enumerate(self.vid, self.pid)
+        return len(devs) > 0
 
-    print(f"[+] Tìm thấy {len(devices)} endpoint HID của AULA S75 Pro (VID: 0x{VENDOR_ID:04X}, PID: 0x{PRODUCT_ID:04X}):\n")
-    for idx, d in enumerate(devices):
-        path = d['path'].decode('utf-8', errors='ignore') if isinstance(d['path'], bytes) else d['path']
-        print(f"--- Endpoint #{idx + 1} ---")
-        print(f"  Path: {path}")
-        print(f"  Interface Number: {d.get('interface_number', -1)}")
-        print(f"  Usage Page: 0x{d.get('usage_page', 0):04X}")
-        print(f"  Usage: 0x{d.get('usage', 0):04X}")
-        print(f"  Manufacturer: {d.get('manufacturer_string', 'Unknown')}")
-        print(f"  Product: {d.get('product_string', 'Unknown')}")
-        print()
+    def get_info(self) -> dict:
+        """Get keyboard connection details."""
+        devs = hid.enumerate(self.vid, self.pid)
+        if not devs:
+            return {"connected": False, "name": "Không phát hiện AULA S75 Pro"}
+        
+        info = {
+            "connected": True,
+            "name": "AULA S75 Pro",
+            "vid": f"0x{self.vid:04X}",
+            "pid": f"0x{self.pid:04X}",
+            "endpoints": len(devs),
+            "manufacturer": devs[0].get("manufacturer_string", "SONiX"),
+            "product": devs[0].get("product_string", "AULA-S75Pro")
+        }
+        return info
 
-    return devices
+    def apply_lighting(
+        self,
+        mode: int = 1,
+        r: int = 0,
+        g: int = 255,
+        b: int = 255,
+        brightness: int = 5,
+        speed: int = 3,
+        direction: int = 0,
+        colorful: int = 0,
+    ) -> bool:
+        """Send RGB lighting configuration to the keyboard."""
+        return apply_keyboard_lighting(
+            mode=mode,
+            r=r,
+            g=g,
+            b=b,
+            brightness=brightness,
+            speed=speed,
+            direction=direction,
+            colorful=colorful,
+        )
 
-def test_connection():
-    """Try connecting to the configuration endpoint."""
-    devices = list_aula_devices()
-    if not devices:
-        return
+    def set_static_color(self, r: int, g: int, b: int, brightness: int = 5) -> bool:
+        """Convenience method to set solid static color."""
+        return self.apply_lighting(mode=1, r=r, g=g, b=b, brightness=brightness, colorful=0)
 
-    # Find vendor-defined usage page (typically 0xFF00 or interface_number == 1 or 3)
-    target = None
-    for d in devices:
-        # Vendor specific usage page is usually >= 0xFF00
-        if d.get('usage_page', 0) >= 0xFF00:
-            target = d
-            break
-
-    if not target:
-        target = devices[0]
-
-    path = target['path']
-    print(f"[*] Đang thử mở kết nối tới endpoint: {path} ...")
-    try:
-        h = hid.device()
-        h.open_path(path)
-        print("[+] Kết nối thành công tới thiết bị!")
-        h.close()
-    except Exception as e:
-        print(f"[-] Không thể mở endpoint: {e}")
-
-if __name__ == "__main__":
-    test_connection()
+    def turn_off_lighting(self) -> bool:
+        """Turn off keyboard backlight."""
+        return self.apply_lighting(mode=20, r=0, g=0, b=0, brightness=1)
