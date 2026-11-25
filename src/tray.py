@@ -1,63 +1,80 @@
 """
 AULA S75 Pro Controller - System Tray Integration
-Provides a background notification area icon with quick actions.
+Dynamic right-click menu with saved personal profiles, LCD clock sync, and quick LED toggle.
 """
 
+from __future__ import annotations
 import threading
+from typing import Callable, List, Optional
 from PIL import Image, ImageDraw
 import pystray
 from pystray import MenuItem as item
 
-def create_tray_image(width=64, height=64, color1="#00ffff", color2="#7b00ff"):
-    """Generate a clean keyboard-styled tray icon."""
+
+def create_tray_image(width: int = 64, height: int = 64) -> Image.Image:
+    """Generate a high-contrast keyboard icon for the Windows notification area."""
     image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
+    draw.rounded_rectangle([4, 12, 60, 52], radius=8, fill="#141720", outline="#00D4FF", width=3)
 
-    # Outer rounded rectangle (keyboard frame)
-    draw.rounded_rectangle([4, 12, 60, 52], radius=8, fill="#1e212b", outline=color1, width=3)
+    for x in (10, 22, 34, 46):
+        c1 = "#FF6A00" if x == 34 else "#2E364D"
+        c2 = "#00D4FF" if x in (10, 46) else "#2E364D"
+        draw.rectangle([x, 18, x + 8, 26], fill=c1)
+        draw.rectangle([x, 30, x + 8, 38], fill=c2)
 
-    # Mini keycaps inside
-    key_color = "#333b4d"
-    # Row 1 keys
-    draw.rectangle([10, 18, 18, 26], fill=key_color)
-    draw.rectangle([22, 18, 30, 26], fill=key_color)
-    draw.rectangle([34, 18, 42, 26], fill=color1)
-    draw.rectangle([46, 18, 54, 26], fill=key_color)
-
-    # Row 2 keys
-    draw.rectangle([10, 30, 18, 38], fill=color2)
-    draw.rectangle([22, 30, 30, 38], fill=key_color)
-    draw.rectangle([34, 30, 42, 38], fill=key_color)
-    draw.rectangle([46, 30, 54, 38], fill=color2)
-
-    # Spacebar
-    draw.rectangle([16, 42, 48, 47], fill=color1)
-
+    draw.rectangle([16, 42, 48, 47], fill="#FF6A00")
     return image
 
+
 class SystemTrayApp:
-    def __init__(self, on_show_window=None, on_quit=None, device=None):
+    def __init__(
+        self,
+        on_show_window: Optional[Callable[[], None]] = None,
+        on_apply_profile: Optional[Callable[[dict], None]] = None,
+        on_turn_off: Optional[Callable[[], None]] = None,
+        on_sync_clock: Optional[Callable[[], None]] = None,
+        on_quit: Optional[Callable[[], None]] = None,
+        profiles: Optional[List[dict]] = None,
+    ):
         self.on_show_window = on_show_window
+        self.on_apply_profile = on_apply_profile
+        self.on_turn_off = on_turn_off
+        self.on_sync_clock = on_sync_clock
         self.on_quit = on_quit
-        self.device = device
-        self.icon = None
+        self.profiles = list(profiles or [])
+        self.icon: Optional[pystray.Icon] = None
 
-    def _show_window_action(self, icon, item):
-        if self.on_show_window:
-            self.on_show_window()
+    def update_profiles(self, profiles: List[dict]):
+        self.profiles = list(profiles)
+        if self.icon:
+            self.icon.menu = self._build_menu()
+            self.icon.update_menu()
 
-    def _quick_turn_off(self, icon, item):
-        if self.device:
-            threading.Thread(target=self.device.turn_off_lighting, daemon=True).start()
+    def _build_menu(self) -> pystray.Menu:
+        menu_items = [
+            item("Mở AULA S75 Studio", lambda _ic, _it: self.on_show_window and self.on_show_window(), default=True),
+            pystray.Menu.SEPARATOR,
+        ]
 
-    def _quick_spectrum(self, icon, item):
-        if self.device:
-            threading.Thread(
-                target=lambda: self.device.apply_lighting(mode=8, colorful=1),
-                daemon=True
-            ).start()
+        if self.profiles:
+            profile_items = []
+            for p in self.profiles[:8]:
+                prof_copy = dict(p)
+                profile_items.append(
+                    item(prof_copy["name"], lambda _ic, _it, pc=prof_copy: self.on_apply_profile and self.on_apply_profile(pc))
+                )
+            menu_items.append(item("🎨 Áp dụng Profile nhanh", pystray.Menu(*profile_items)))
 
-    def _exit_action(self, icon, item):
+        menu_items.extend([
+            item("🕒 Đồng bộ giờ LCD", lambda _ic, _it: self.on_sync_clock and self.on_sync_clock()),
+            item("🌙 Tắt đèn bàn phím", lambda _ic, _it: self.on_turn_off and self.on_turn_off()),
+            pystray.Menu.SEPARATOR,
+            item("Thoát hoàn toàn", self._exit_action),
+        ])
+        return pystray.Menu(*menu_items)
+
+    def _exit_action(self, _icon, _item):
         if self.icon:
             self.icon.stop()
         if self.on_quit:
@@ -65,17 +82,12 @@ class SystemTrayApp:
 
     def run(self):
         img = create_tray_image()
-        menu = pystray.Menu(
-            item("Mở điều khiển AULA S75", self._show_window_action, default=True),
-            pystray.Menu.SEPARATOR,
-            item("🌈 Bật hiệu ứng Cầu vồng", self._quick_spectrum),
-            item("🌙 Tắt đèn bàn phím", self._quick_turn_off),
-            pystray.Menu.SEPARATOR,
-            item("Thoát", self._exit_action)
-        )
-        self.icon = pystray.Icon("AULA S75 Pro", img, "AULA S75 Pro Controller", menu)
+        self.icon = pystray.Icon("AULA S75 Pro", img, "AULA S75 Pro — Personal RGB Studio", self._build_menu())
         self.icon.run()
 
     def stop(self):
         if self.icon:
-            self.icon.stop()
+            try:
+                self.icon.stop()
+            except Exception:
+                pass

@@ -17,6 +17,7 @@ def build_exe():
         "--onefile",
         "--name", "AulaS75Controller",
         "--collect-all", "customtkinter",
+        "--hidden-import", "PIL._tkinter_finder",
         "--paths", project_root,
         main_py
     ]

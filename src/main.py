@@ -1,52 +1,70 @@
 """
 AULA S75 Pro Controller - Main Entry Point
-Launches Desktop GUI and System Tray background integration.
+Binds the Studio GUI, Serialized USB HID Device Controller, and Windows System Tray.
+Supports '--minimized' flag for silent Windows auto-startup.
 """
 
+import os
 import sys
 import threading
-import os
 
-# Add root directory to sys.path if needed
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.gui import AulaS75App
-from src.tray import SystemTrayApp
 from src.device import AulaS75Device
+from src.gui import AulaS75App
+from src.storage import load_config
+from src.tray import SystemTrayApp
+
 
 def main():
+    start_minimized = "--minimized" in sys.argv
+    cfg = load_config()
     device = AulaS75Device()
-    tray_app = None
-    app = None
+    app: AulaS75App | None = None
+    tray_app: SystemTrayApp | None = None
 
     def show_window():
         if app:
             app.after(0, lambda: (app.deiconify(), app.lift(), app.focus_force()))
+
+    def apply_prof_from_tray(prof: dict):
+        if app:
+            app.after(0, lambda: app.apply_profile(prof))
+
+    def turn_off_from_tray():
+        if app:
+            app.after(0, app.quick_turn_off)
+
+    def sync_clock_from_tray():
+        if app:
+            app.after(0, app._on_sync_clock)
 
     def quit_app():
         if tray_app:
             tray_app.stop()
         if app:
             app.after(0, app.destroy)
-        sys.exit(0)
-
-    def on_minimize_to_tray():
-        # Triggered when user closes main window
-        pass
+        os._exit(0)
 
     tray_app = SystemTrayApp(
         on_show_window=show_window,
+        on_apply_profile=apply_prof_from_tray,
+        on_turn_off=turn_off_from_tray,
+        on_sync_clock=sync_clock_from_tray,
         on_quit=quit_app,
-        device=device
+        profiles=cfg.get("profiles", []),
     )
 
-    # Start system tray in a background daemon thread
-    tray_thread = threading.Thread(target=tray_app.run, daemon=True)
-    tray_thread.start()
+    threading.Thread(target=tray_app.run, daemon=True).start()
 
-    # Launch GUI in main thread (Tkinter requires main thread on Windows)
-    app = AulaS75App(on_minimize_to_tray=on_minimize_to_tray)
+    app = AulaS75App(
+        device=device,
+        on_minimize_to_tray=lambda: None,
+        on_profiles_updated=tray_app.update_profiles,
+        start_minimized=start_minimized,
+    )
     app.mainloop()
+
 
 if __name__ == "__main__":
     main()
