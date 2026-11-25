@@ -14,7 +14,7 @@ import customtkinter as ctk
 
 from .device import AulaS75Device
 from .layout_data import KEYBOARD_KEYS
-from .protocol import LIGHT_MODE_SPECS, LIGHT_MODES
+from .protocol import LIGHT_MODE_SPECS, LIGHT_MODES, SIDELIGHT_MODES
 from .storage import (
     is_autostart_enabled,
     load_config,
@@ -76,6 +76,7 @@ class AulaS75App(ctk.CTk):
         self.state_speed: int = int(st.get("speed", 3))
         self.state_direction: int = int(st.get("direction", 0))
         self.state_colorful: int = int(st.get("colorful", 0))
+        self.state_side_mode: int = int(st.get("side_mode", 32))
 
         raw_pk = self.config_data.get("per_key_colors", {})
         self.per_key_colors: Dict[int, Tuple[int, int, int]] = {
@@ -87,6 +88,7 @@ class AulaS75App(ctk.CTk):
         self._debounce_id: Optional[str] = None
         self._active_tab = "lighting"
         self._mode_buttons: Dict[int, ctk.CTkButton] = {}
+        self._side_buttons: Dict[int, ctk.CTkButton] = {}
         self._nav_buttons: Dict[str, ctk.CTkButton] = {}
         self._tab_frames: Dict[str, ctk.CTkFrame] = {}
 
@@ -105,7 +107,7 @@ class AulaS75App(ctk.CTk):
         if start_minimized:
             self.withdraw()
             if self.config_data["app_settings"].get("apply_on_startup", True):
-                self.after(600, lambda: self.apply_global_now(save=False))
+                self.after(600, lambda: self.apply_bundle_now(save=False))
 
     # ------------------------------------------------------------------
     # Layout & Navigation
@@ -313,13 +315,38 @@ class AulaS75App(ctk.CTk):
 
         # Direction
         d_row = ctk.CTkFrame(ctrl_card, fg_color="transparent")
-        d_row.pack(fill="x", padx=12, pady=(2, 10))
+        d_row.pack(fill="x", padx=12, pady=(2, 8))
         ctk.CTkLabel(d_row, text="Hướng chạy:", font=ctk.CTkFont(size=12)).pack(side="left")
         self.dir_seg = ctk.CTkSegmentedButton(
             d_row, values=["Trái ➔ Phải", "Phải ➔ Trái"], command=self._on_dir_change,
             selected_color="#0088CC", selected_hover_color="#00A6F5"
         )
         self.dir_seg.pack(side="right")
+
+        # Side Light Strip Selector (Modes 32..36)
+        side_box = ctk.CTkFrame(left_panel, fg_color="#1A1E2B", corner_radius=10)
+        side_box.pack(fill="x", padx=12, pady=(0, 12))
+        ctk.CTkLabel(
+            side_box, text="2 DẢI LED BÊN HÔNG (SIDE LIGHT)",
+            font=ctk.CTkFont(size=11, weight="bold"), text_color="#00D4FF"
+        ).pack(anchor="w", padx=12, pady=(8, 4))
+        side_row = ctk.CTkFrame(side_box, fg_color="transparent")
+        side_row.pack(fill="x", padx=10, pady=(0, 10))
+        for col_i, (s_id, s_name) in enumerate(SIDELIGHT_MODES.items()):
+            side_row.grid_columnconfigure(col_i, weight=1)
+            sb = ctk.CTkButton(
+                side_row,
+                text=s_name,
+                height=28,
+                corner_radius=6,
+                font=ctk.CTkFont(size=11, weight="bold"),
+                fg_color="#181C28",
+                hover_color="#232A3D",
+                text_color="#CBD4EA",
+                command=lambda sid=s_id: self._select_sidelight(sid),
+            )
+            sb.grid(row=0, column=col_i, padx=3, sticky="ew")
+            self._side_buttons[s_id] = sb
 
         # Right Panel: Color Picker + Swatches + Apply
         right_panel = ctk.CTkFrame(bottom, width=320, fg_color="#141720", corner_radius=12, border_width=1, border_color="#252B3D")
@@ -368,7 +395,7 @@ class AulaS75App(ctk.CTk):
             fg_color="#0088CC",
             hover_color="#00A6F5",
             font=ctk.CTkFont(size=13, weight="bold"),
-            command=lambda: self.apply_global_now(save=True),
+            command=lambda: self.apply_bundle_now(save=True),
         ).pack(fill="x", padx=12, pady=(0, 12))
 
     # ------------------------------------------------------------------
@@ -495,9 +522,10 @@ class AulaS75App(ctk.CTk):
             ctk.CTkLabel(info, text=prof["name"], font=ctk.CTkFont(size=14, weight="bold"), text_color="#FFFFFF").pack(anchor="w")
             m_name = LIGHT_MODES.get(prof.get("mode", 1), "Mode")
             c_txt = "7 màu Cầu vồng" if prof.get("colorful") else f"Đơn sắc {rgb_to_hex(*rgb)}"
+            s_txt = SIDELIGHT_MODES.get(prof.get("side_mode", 32), "7 màu")
             ctk.CTkLabel(
                 info,
-                text=f"{m_name}  •  {c_txt}  •  Sáng {prof.get('brightness', 5)}/5",
+                text=f"{m_name}  •  {c_txt}  •  Sáng {prof.get('brightness', 5)}/5  •  Hông: {s_txt}",
                 font=ctk.CTkFont(size=11), text_color="#8C96B2"
             ).pack(anchor="w")
 
@@ -610,6 +638,13 @@ class AulaS75App(ctk.CTk):
             else:
                 btn.configure(fg_color="#181C28", text_color="#CBD4EA")
 
+        for s_id, btn in self._side_buttons.items():
+            if s_id == self.state_side_mode:
+                fg = "#662233" if s_id == 36 else "#006699"
+                btn.configure(fg_color=fg, text_color="#FFFFFF")
+            else:
+                btn.configure(fg_color="#181C28", text_color="#CBD4EA")
+
         self.bri_slider.set(self.state_brightness)
         self.bri_val_lbl.configure(text=f"{self.state_brightness} / 5")
         self.spd_slider.set(self.state_speed)
@@ -627,7 +662,28 @@ class AulaS75App(ctk.CTk):
             speed=self.state_speed,
             direction=self.state_direction,
             colorful=self.state_colorful,
+            side_mode=self.state_side_mode,
         )
+
+    def _select_sidelight(self, side_id: int):
+        self.state_side_mode = side_id
+        self._sync_ui_from_state()
+        self.config_data["last_state"]["side_mode"] = side_id
+        save_config(self.config_data)
+        self.set_status(f"Đang chỉnh 2 dải LED hông: {SIDELIGHT_MODES.get(side_id, side_id)}...")
+
+        def on_done(ok: bool, err: str):
+            def ui_cb():
+                if ok:
+                    self.set_status(f"✓ LED hông: {SIDELIGHT_MODES.get(side_id, side_id)}")
+                    self.latency_lbl.configure(text=f"ACK OK ({self.device.transport.last_latency_ms:.0f} ms)")
+                else:
+                    self.set_status(f"✗ Lỗi LED hông: {err}", error=True)
+                self._refresh_connection_status()
+
+            self.after(0, ui_cb)
+
+        self.device.enqueue_sidelight(side_id, on_done=on_done)
 
     def _select_mode(self, mode_id: int):
         self.state_mode = mode_id
@@ -705,7 +761,9 @@ class AulaS75App(ctk.CTk):
             "colorful": self.state_colorful,
         }
         if save:
-            self.config_data["last_state"] = dict(params)
+            saved = dict(params)
+            saved["side_mode"] = self.state_side_mode
+            self.config_data["last_state"] = saved
             save_config(self.config_data)
 
         self.set_status("Đang gửi cấu hình LED lên bàn phím...")
@@ -725,10 +783,48 @@ class AulaS75App(ctk.CTk):
 
         self.device.enqueue_lighting(params, on_done=on_done)
 
+    def apply_bundle_now(self, save: bool = True):
+        """Apply both main keyboard lighting and side LED strip mode together."""
+        r, g, b = self.state_rgb
+        params = {
+            "mode": self.state_mode,
+            "r": r,
+            "g": g,
+            "b": b,
+            "brightness": self.state_brightness,
+            "speed": self.state_speed,
+            "direction": self.state_direction,
+            "colorful": self.state_colorful,
+        }
+        side_m = self.state_side_mode
+        if save:
+            saved = dict(params)
+            saved["side_mode"] = side_m
+            self.config_data["last_state"] = saved
+            save_config(self.config_data)
+
+        self.set_status("Đang đồng bộ LED phím chính + 2 dải hông...")
+
+        def on_done(ok: bool, err: str):
+            def ui_cb():
+                if ok:
+                    m_name = LIGHT_MODES.get(self.state_mode, f"Mode {self.state_mode}")
+                    s_name = SIDELIGHT_MODES.get(side_m, str(side_m))
+                    self.set_status(f"✓ Đã đồng bộ: {m_name} + Hông ({s_name})")
+                    self.latency_lbl.configure(text=f"ACK OK ({self.device.transport.last_latency_ms:.0f} ms)")
+                else:
+                    self.set_status(f"✗ Lỗi: {err}", error=True)
+                self._refresh_connection_status()
+
+            self.after(0, ui_cb)
+
+        self.device.enqueue_bundle(params, side_m, on_done=on_done)
+
     def quick_turn_off(self):
         self.state_mode = 20
+        self.state_side_mode = 36
         self._sync_ui_from_state()
-        self.apply_global_now(save=True)
+        self.apply_bundle_now(save=True)
 
     # ------------------------------------------------------------------
     # Per-Key RGB Helpers
@@ -806,6 +902,7 @@ class AulaS75App(ctk.CTk):
             "speed": self.state_speed,
             "direction": self.state_direction,
             "colorful": self.state_colorful,
+            "side_mode": self.state_side_mode,
         }
         self.config_data.setdefault("profiles", []).append(prof)
         save_config(self.config_data)
@@ -822,8 +919,9 @@ class AulaS75App(ctk.CTk):
         self.state_speed = int(prof.get("speed", 3))
         self.state_direction = int(prof.get("direction", 0))
         self.state_colorful = int(prof.get("colorful", 0))
+        self.state_side_mode = int(prof.get("side_mode", 32))
         self._sync_ui_from_state()
-        self.apply_global_now(save=True)
+        self.apply_bundle_now(save=True)
 
     def _delete_profile(self, idx: int):
         profiles = self.config_data.get("profiles", [])

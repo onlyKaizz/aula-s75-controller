@@ -48,6 +48,15 @@ LIGHT_MODE_SPECS: Dict[int, Dict] = {
 
 LIGHT_MODES: Dict[int, str] = {k: v["name"] for k, v in LIGHT_MODE_SPECS.items()}
 
+# Hardware-verified Side Light strip modes on AULA S75 Pro (Routine 0x433FD0)
+SIDELIGHT_MODES: Dict[int, str] = {
+    32: "Dải 7 màu",
+    33: "Hiệu ứng chuyển",
+    34: "Xanh dương tĩnh",
+    35: "Nhịp thở đổi màu",
+    36: "Tắt LED hông",
+}
+
 
 def find_usb_config_path() -> Optional[bytes]:
     """Locate the vendor-defined HID config endpoint (Interface 3 / UsagePage 0xFF13)."""
@@ -229,13 +238,13 @@ class KeyboardTransport:
                 if not expect_ack:
                     return True
 
-                # Poll feature report if MCU reports busy (0xFF) instead of re-sending command
-                for poll in range(6):
+                # Poll feature report if MCU reports busy (0xFF / 0) instead of re-sending command
+                for poll in range(10):
                     ack = dev.get_feature_report(0, 65)
                     r4 = ack[4] if (ack and len(ack) > 4) else None
                     if r4 == 1:
                         return True
-                    if r4 in (0xFF, 255, 0) and poll < 5:
+                    if r4 in (0xFF, 255, 0) and poll < 9:
                         time.sleep(delay)
                         continue
                     self._log(f"ACK mismatch for [{buf[0]:02X} {buf[1]:02X}] (attempt {attempt}/{retries}): r4={r4}")
@@ -382,6 +391,25 @@ class KeyboardTransport:
             ([0x04, 0x02], True),
         ]
         return self.execute_transaction(steps, label="Keyboard Settings")
+
+    def apply_sidelight(self, side_mode: int = 32) -> bool:
+        """Send Side Light strip command (32..36) matching DeviceDriver.exe routine 0x433FD0."""
+        m = max(32, min(36, int(side_mode)))
+        p_side = [0] * 64
+        p_side[0] = m
+        p_side[14] = 0xAA
+        p_side[15] = 0x55
+        steps = [
+            ([0x04, 0x18], True),
+            ([0x04, 0x13, 0, 0, 0, 0, 0, 0, 1], True),
+            (p_side, False),
+            ([0x04, 0x02], True),
+            ([0x04, 0xF0], False),
+        ]
+        return self.execute_transaction(
+            steps,
+            label=f"SideLight {m} ({SIDELIGHT_MODES.get(m, 'Unknown')})",
+        )
 
     def sync_lcd_clock(self) -> bool:
         """Sync Windows local date & time to the AULA S75 Pro LCD screen (Routine 0x423A80)."""

@@ -80,6 +80,31 @@ class AulaS75Device:
                 self._worker_running = True
                 threading.Thread(target=self._drain_worker, daemon=True).start()
 
+    def enqueue_sidelight(
+        self,
+        side_mode: int,
+        on_done: Optional[Callable[[bool, str], None]] = None,
+    ):
+        """Queue a side LED strip mode update."""
+        with self._queue_lock:
+            self._pending_task = ("sidelight", {"side_mode": side_mode}, on_done)
+            if not self._worker_running:
+                self._worker_running = True
+                threading.Thread(target=self._drain_worker, daemon=True).start()
+
+    def enqueue_bundle(
+        self,
+        global_params: dict,
+        side_mode: int,
+        on_done: Optional[Callable[[bool, str], None]] = None,
+    ):
+        """Queue both main lighting and side light update sequentially."""
+        with self._queue_lock:
+            self._pending_task = ("bundle", {"global_params": dict(global_params), "side_mode": side_mode}, on_done)
+            if not self._worker_running:
+                self._worker_running = True
+                threading.Thread(target=self._drain_worker, daemon=True).start()
+
     def _drain_worker(self):
         while True:
             with self._queue_lock:
@@ -97,6 +122,12 @@ class AulaS75Device:
                     ok = self.transport.apply_global_lighting(**payload)
                 elif kind == "per_key":
                     ok = self.transport.apply_per_key_lighting(**payload)
+                elif kind == "sidelight":
+                    ok = self.transport.apply_sidelight(**payload)
+                elif kind == "bundle":
+                    ok1 = self.transport.apply_global_lighting(**payload["global_params"])
+                    ok2 = self.transport.apply_sidelight(side_mode=payload["side_mode"])
+                    ok = ok1 and ok2
                 if not ok:
                     err = self.transport.last_error or "Không nhận được phản hồi ACK từ bàn phím."
             except Exception as exc:
@@ -108,6 +139,9 @@ class AulaS75Device:
                     on_done(ok, err)
                 except Exception:
                     pass
+
+    def apply_sidelight(self, side_mode: int = 32) -> bool:
+        return self.transport.apply_sidelight(side_mode=side_mode)
 
     def apply_lighting(
         self,

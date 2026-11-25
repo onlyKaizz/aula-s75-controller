@@ -309,12 +309,14 @@ class KeyboardPreviewCanvas(ctk.CTkFrame):
         self.anim_speed = 3
         self.anim_direction = 0
         self.anim_colorful = 0
+        self.anim_side_mode = 32
         self.per_key_map: Dict[int, Tuple[int, int, int]] = {}
         self.brush_rgb: Tuple[int, int, int] = (255, 106, 0)
         self._anim_running = not interactive_paint
         self._t0 = time.perf_counter()
         self._sparkle_seeds = {k["light_index"]: random.random() * 6.28 for k in KEYBOARD_KEYS}
         self._key_items: Dict[int, Tuple[int, int, int]] = {}  # light_index -> (glow_id, cap_id, text_id)
+        self._side_items: list = []  # (is_left, seg_idx, rect_id)
         self._key_boxes: list = []  # (x1, y1, x2, y2, key_dict)
 
         self._draw_chassis_and_keys()
@@ -333,6 +335,18 @@ class KeyboardPreviewCanvas(ctk.CTkFrame):
         # Keyboard frame shadow & metallic body
         c.create_rectangle(6, 6, w - 6, h - 6, fill="#090B10", outline="#262D42", width=2)
         c.create_rectangle(12, 12, w - 12, h - 12, fill="#171B26", outline="#2E364D", width=1)
+
+        # Left & Right AULA S75 Pro Side Light Strips (8 LED segments each)
+        strip_top = 24
+        strip_bot = h - 24
+        seg_h = (strip_bot - strip_top) / 8.0
+        for s_i in range(8):
+            sy1 = strip_top + s_i * seg_h + 1
+            sy2 = strip_top + (s_i + 1) * seg_h - 1
+            r_left = c.create_rectangle(8, sy1, 13, sy2, fill="#00D4FF", outline="")
+            r_right = c.create_rectangle(w - 13, sy1, w - 8, sy2, fill="#00D4FF", outline="")
+            self._side_items.append((True, s_i, r_left))
+            self._side_items.append((False, s_i, r_right))
 
         # Draw each of the 80 keys
         for k in KEYBOARD_KEYS:
@@ -365,13 +379,23 @@ class KeyboardPreviewCanvas(ctk.CTkFrame):
         c.create_oval(kx - kr + 2, ky - kr + 2, kx + kr - 2, ky + kr - 2, fill="#242B3D", outline="#4B5675", width=2)
         c.create_text(kx, ky, text="VOL", fill="#98A3C2", font=("Segoe UI", 6, "bold"))
 
-    def set_preview_state(self, mode: int, rgb: Tuple[int, int, int], brightness: int, speed: int, direction: int, colorful: int):
+    def set_preview_state(
+        self,
+        mode: int,
+        rgb: Tuple[int, int, int],
+        brightness: int,
+        speed: int,
+        direction: int,
+        colorful: int,
+        side_mode: int = 32,
+    ):
         self.anim_mode = mode
         self.anim_rgb = rgb
         self.anim_brightness = brightness
         self.anim_speed = speed
         self.anim_direction = direction
         self.anim_colorful = colorful
+        self.anim_side_mode = side_mode
 
     def set_per_key_colors(self, mapping: Dict[int, Tuple[int, int, int]]):
         self.per_key_map = dict(mapping)
@@ -494,3 +518,23 @@ class KeyboardPreviewCanvas(ctk.CTkFrame):
                 self.canvas.itemconfigure(glow, fill=hx)
                 self.canvas.itemconfigure(cap, fill=rgb_to_hex(*cap_rgb), outline=hx)
                 self.canvas.itemconfigure(txt, fill=rgb_to_hex(*blend_rgb(rgb, (255, 255, 255), 0.35)))
+
+        # Animate Left & Right Side Light Strips (modes 32..36)
+        sm = self.anim_side_mode
+        for _is_left, seg_i, rect_id in self._side_items:
+            if sm == 36:  # Off
+                sc = (24, 28, 40)
+            elif sm == 34:  # Static Blue
+                sc = (0, 120, 255)
+            elif sm == 35:  # Breathing cycle
+                hue = (t * 0.14) % 1.0
+                pulse = 0.15 + 0.85 * (0.5 + 0.5 * math.sin(t * 2.2))
+                c = tuple(int(v * 255) for v in colorsys.hsv_to_rgb(hue, 1.0, 1.0))
+                sc = scale_rgb(c, pulse)
+            elif sm == 33:  # Shift / Neon
+                hue = (t * 0.25) % 1.0
+                sc = tuple(int(v * 255) for v in colorsys.hsv_to_rgb(hue, 1.0, 1.0))
+            else:  # 32: Flowing Rainbow
+                hue = (seg_i / 8.0 - t * 0.45) % 1.0
+                sc = tuple(int(v * 255) for v in colorsys.hsv_to_rgb(hue, 1.0, 1.0))
+            self.canvas.itemconfigure(rect_id, fill=rgb_to_hex(*sc))

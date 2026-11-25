@@ -30,6 +30,7 @@ DEFAULT_PROFILES: List[Dict[str, Any]] = [
         "speed": 3,
         "direction": 0,
         "colorful": 0,
+        "side_mode": 32,
     },
     {
         "name": "Cyberpunk Cyan",
@@ -42,6 +43,7 @@ DEFAULT_PROFILES: List[Dict[str, Any]] = [
         "speed": 3,
         "direction": 0,
         "colorful": 0,
+        "side_mode": 34,
     },
     {
         "name": "Sóng Cầu Vồng (Rainbow Wave)",
@@ -54,6 +56,7 @@ DEFAULT_PROFILES: List[Dict[str, Any]] = [
         "speed": 3,
         "direction": 0,
         "colorful": 1,
+        "side_mode": 32,
     },
     {
         "name": "Coding Đêm (Dịu mắt)",
@@ -66,6 +69,7 @@ DEFAULT_PROFILES: List[Dict[str, Any]] = [
         "speed": 2,
         "direction": 0,
         "colorful": 0,
+        "side_mode": 35,
     },
     {
         "name": "Tắt Đèn (Stealth)",
@@ -78,6 +82,7 @@ DEFAULT_PROFILES: List[Dict[str, Any]] = [
         "speed": 3,
         "direction": 0,
         "colorful": 0,
+        "side_mode": 36,
     },
 ]
 
@@ -91,6 +96,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "speed": 3,
         "direction": 0,
         "colorful": 0,
+        "side_mode": 32,
     },
     "per_key_colors": {},  # str(light_index) -> [r, g, b]
     "profiles": DEFAULT_PROFILES,
